@@ -294,21 +294,26 @@ public class Init implements IXposedHookLoadPackage {
         }
     }
 
-    private static void installHooks(ClassLoader classLoader) {
-        XposedBridge.log(TAG + "/Init: worker-start");
+    /**
+     * Eligibility hooks must be in place before any Google Phone code runs.
+     * A cold start for recording_geofence_check_worker otherwise sees the
+     * unhooked canRecordCall()/withinCrosbyGeoFence() result and turns the
+     * "always record" settings off. Returns the open helper for the worker,
+     * or null if it could not be opened.
+     */
+    private static DexHelper installEligibilityHooks(ClassLoader classLoader) {
+        long start = android.os.SystemClock.elapsedRealtime();
+        XposedBridge.log(TAG + "/Init: eligibility-start");
+        DexHelper dex = null;
         try {
             XposedBridge.log(TAG + "/Init: dex-helper-open-begin");
-            try (var dex = new DexHelper(classLoader)) {
-                XposedBridge.log(TAG + "/Init: dex-helper-opened");
-                runHookStep("canRecordCall", () -> hookCanRecordCall(dex));
-                runHookStep("withinCrosbyGeoFence", () -> hookWithinCrosbyGeoFence(dex));
-                runHookStep("getSupportedLocale", () -> hookGetSupportedLocaleFromCountryCode(dex));
-                runHookStep("isCallRecordingCountry", () -> hookIsCallRecordingCountry(dex));
-                runHookStep("automatic-policy", () -> AutoRecordingHook.install(dex));
-                runHookStep("native-recorder-timing-and-early", () ->
-                        RecordingTimingHook.installNativePipeline(dex));
-            }
-            XposedBridge.log(TAG + "/Init: dex-helper-closed");
+            dex = new DexHelper(classLoader);
+            XposedBridge.log(TAG + "/Init: dex-helper-opened");
+            var opened = dex;
+            runHookStep("canRecordCall", () -> hookCanRecordCall(opened));
+            runHookStep("withinCrosbyGeoFence", () -> hookWithinCrosbyGeoFence(opened));
+            runHookStep("getSupportedLocale", () -> hookGetSupportedLocaleFromCountryCode(opened));
+            runHookStep("isCallRecordingCountry", () -> hookIsCallRecordingCountry(opened));
         } catch (Throwable failure) {
             XposedBridge.log(TAG + "/Init: dex-helper FAILED error=" + failure);
             XposedBridge.log(failure);
@@ -316,6 +321,26 @@ public class Init implements IXposedHookLoadPackage {
             runHookStep("tts-synthesize", Init::hookSynthesizeToFile);
             runHookStep("tts-dispatch", Init::hookDispatchOnInit);
             runHookStep("tts-language", Init::hookIsLanguageAvailable);
+            long millis = android.os.SystemClock.elapsedRealtime() - start;
+            XposedBridge.log(TAG + "/Init: eligibility-complete durationMs=" + millis);
+        }
+        return dex;
+    }
+
+    /** Diagnostics and the optional auto-record policy are not startup-critical. */
+    private static void installDeferredHooks(DexHelper dex) {
+        XposedBridge.log(TAG + "/Init: worker-start");
+        try {
+            if (dex != null) {
+                runHookStep("automatic-policy", () -> AutoRecordingHook.install(dex));
+                runHookStep("native-recorder-timing-and-early", () ->
+                        RecordingTimingHook.installNativePipeline(dex));
+            }
+        } finally {
+            if (dex != null) {
+                dex.close();
+                XposedBridge.log(TAG + "/Init: dex-helper-closed");
+            }
             runHookStep("activity-resume", Init::hookActivityOnResume);
             XposedBridge.log(TAG + "/Init: worker-complete");
         }
@@ -326,7 +351,8 @@ public class Init implements IXposedHookLoadPackage {
         if (!"com.google.android.dialer".equals(lpparam.packageName)) return;
         RecordingTimingHook.markModuleLoaded();
         RecordingTimingHook.installCallState();
-        new Thread(() -> installHooks(lpparam.classLoader), "CallRecording-Init").start();
+        var dex = installEligibilityHooks(lpparam.classLoader);
+        new Thread(() -> installDeferredHooks(dex), "CallRecording-Init").start();
         Log.d(TAG, "handleLoadPackage done");
     }
 }
