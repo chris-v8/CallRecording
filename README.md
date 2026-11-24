@@ -29,7 +29,8 @@ This fork is based on [vvb2060/CallRecording](https://github.com/vvb2060/CallRec
 6. [Building, installing and testing](#6-building-installing-and-testing)
 7. [Reading the logs](#7-reading-the-logs)
 8. [Switching Google Phone versions safely](#8-switching-google-phone-versions-safely)
-9. [Where to learn more](#9-where-to-learn-more)
+9. [Known limitations](#9-known-limitations)
+10. [Where to learn more](#10-where-to-learn-more)
 
 ---
 
@@ -53,9 +54,13 @@ Status per Google Phone version:
 | Settings no longer switch themselves off | ✅ tested | ✅ (same protection) |
 | "Record all calls" (module setting) | ✅ tested | ✅ tested |
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
-| Multi-select for "Selected numbers": Phone's Add button | ✅ tested | ⏳ waiting for test |
-| Multi-select for "Selected numbers": from the Call Recording app | ✅ tested | ⏳ waiting for test |
-| Multi-select shows numbers already on the list, untick to remove | ⏳ waiting for test | ⏳ waiting for test |
+| Multi-select add, from Phone's Add button | ✅ tested | ⏳ markers found, not tested |
+| Multi-select add, from the Call Recording app | ✅ tested | ⏳ markers found, not tested |
+| Numbers already on the list shown ticked | ✅ tested (both routes) | ⏳ not tested |
+| Untick to remove, from Phone's Add button | ✅ tested | ⏳ not tested |
+| Untick to remove, from the Call Recording app | ⏳ not tested yet | ⏳ not tested |
+
+See [section 9](#9-known-limitations) for known limitations.
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
 
@@ -106,6 +111,7 @@ LSPosed loads the module  ──►  Init.handleLoadPackage()        (app/src/ma
                • "record all calls" policy (if enabled in the module's app)
                • recording-start timing diagnostics
                • Android 12 bubble gate
+               • "Selected numbers" multi-select (Add button, add/remove, queue)
                • close DexHelper
 ```
 
@@ -381,20 +387,26 @@ Activity.startActivityForResult(intent, …):
     if (IN_ADD_CLICK && PICK && type == phone_v2 && setting on && module list installed)
         intent → NumberPickerActivity
 
-// 2. Several numbers came back → run Google Phone's own handler once per number
-resultHandler(requestCode, resultCode, data):
-    if (data has the module's list of ≥ 2 numbers)
-        for each uri: original handler(requestCode, resultCode, Intent(data = uri))
+// 2. Remember how the screen removes a number (registered when the screen opens)
+register(fragment, eventClass, listener):        // v88: tbo.r(...)
+    if (eventClass has a constructor taking one String)   // the "remove this number" event
+        REMOVERS[fragment] = (listener, eventClass)
 
-// 3. Queue from the module app → applied when the Selected numbers screen appears
-onViewCreated(...) → later: for each queued uri: original handler(9, RESULT_OK, Intent(data = uri))
+// 3. The picker came back with changes → Google Phone's own code, once per number
+resultHandler(requestCode, resultCode, data):
+    if (data has numbers to remove, or ≥ 2 numbers to add)
+        for each stored number to remove: listener.handle(new eventClass(number))
+        for each uri to add:              original handler(requestCode, resultCode, Intent(data = uri))
+
+// 4. Changes queued in the module app → applied when the Selected numbers screen appears
+onViewCreated(...) → later: same as step 3, with request code 9 and RESULT_OK
 ```
 
 Safety rules:
-- With one contact ticked, the result looks exactly like the system picker's, and Google Phone's code handles it unchanged.
+- With exactly one new contact ticked (and nothing unticked), the result looks exactly like the system picker's, and Google Phone's code handles it unchanged.
 - If the module's list isn't installed or the setting *Multi-select in Phone's Add button* is off, the Add button opens the normal picker.
-- The list only answers Google Phone and the Call Recording app. The queue stores contact *links*, not numbers, and is emptied once handed over.
-- Turning on Google Phone's *Selected numbers* switch is still up to you; the module only adds numbers.
+- The list only answers Google Phone and the Call Recording app. The queue stores contact *links* for additions and the stored numbers for removals, and is emptied once handed over.
+- Turning on Google Phone's *Selected numbers* switch is still up to you; the module only changes the list.
 
 **Numbers already on the list start ticked** (*✓ On the list (untick to remove)*). Untick one to remove it (*✗ Will be removed*), tick new ones to add them; the button shows **Save (+added / −removed)**.
 
@@ -516,6 +528,9 @@ That's what makes it reasonably safe to try new Google Phone versions: an unreco
 - [ ] Saved contact is auto-recorded **only** if *record all calls* is on
 - [ ] Bubble appears after leaving the call screen (Android 12+)
 - [ ] After a day or two, Google Phone's auto-record settings are still on
+- [ ] Selected numbers → Add opens the multi-select list, with existing numbers ticked
+- [ ] Ticking new / unticking existing numbers updates Google Phone's list (`added X/Y, removed X/Y`)
+- [ ] Changes made in the Call Recording app appear after opening Google Phone's Selected numbers screen
 
 ---
 
@@ -536,7 +551,14 @@ adb shell su -c "cat /data/adb/lspd/log/modules_*.log" | findstr CallRecording
 | `AutoAll: first eligibility override` | Record-all actually told Google Phone to record a call |
 | `Bubble: bubble gate hooked` / `gate bypassed, show=true` | Bubble fix active / used |
 | `Bubble: no Android 12 bubble gate in this Google Phone version` | Normal on v88 (it has its own bubble) |
+| `Selected: result handler hooked` / `Add button opens the multi-select picker` | Multi-select is active on this Google Phone version |
+| `Selected: remove event hooked via …` | Unticking (removing) will work |
+| `Selected: multi-select: added X/Y, removed X/Y` | Changes from Phone's Add button were handed to Google Phone |
+| `Selected: queued in the module app: added X/Y, removed X/Y` | Changes from the Call Recording app were handed to Google Phone |
+| `Selected: remove listener unknown, N number(s) not removed` | Removing isn't available on this version (adds still work) |
 | `Timing: telecom-connected` / `telecom-disconnected` | A call started / ended |
+
+Picking a **single** new contact (and nothing else) goes through Google Phone's normal path, so it leaves no `Selected:` line. Google Phone itself logs `completed the request to add the number` / `successfully removed the number` in logcat.
 
 **logcat**: Android's live log, including Google Phone's own messages and the module's "not found" warnings:
 
@@ -576,9 +598,55 @@ Afterwards: copy any recordings made on the newer version off the phone first, r
 
 Your call history and contacts are stored by Android, not by Google Phone, so they're not affected.
 
+### Backing up and restoring only the "Selected numbers" list
+
+Going back to v88 once emptied the selected-numbers list (the rest of the settings survived). The list and the recording switches live in one small file, `files/CallRecordingSettingsData.pb` (a few hundred bytes).
+
+Back it up:
+
+```bat
+adb shell "su -c 'cp /data/data/com.google.android.dialer/files/CallRecordingSettingsData.pb /data/local/tmp/crs.pb && chmod 644 /data/local/tmp/crs.pb'"
+adb pull /data/local/tmp/crs.pb C:\dev\CallRecordingSettingsData.pb
+adb shell "su -c 'rm /data/local/tmp/crs.pb'"
+```
+
+Restore it. Stop Google Phone first, then write the backup **into** the existing file (`cat … >`), which keeps the file's owner, permissions and SELinux label exactly as Android expects. Copying a new file over it would not:
+
+```bat
+adb shell am force-stop com.google.android.dialer
+adb push C:\dev\CallRecordingSettingsData.pb /data/local/tmp/crs.pb
+adb shell "su -c 'cat /data/local/tmp/crs.pb > /data/data/com.google.android.dialer/files/CallRecordingSettingsData.pb; rm /data/local/tmp/crs.pb'"
+```
+
+Then open Google Phone → Settings → Call recording → Selected numbers to check.
+
 ---
 
-## 9. Where to learn more
+## 9. Known limitations
+
+**Multi-select "Selected numbers" (4.6)**
+
+- **Checkmarks in the Call Recording app depend on a copy of the list.** The Call Recording app can't read Google Phone's private files, so the module (running inside Google Phone) saves a copy of the list whenever Google Phone's *Selected numbers* screen opens, when its *Add* button is used, and a few seconds after changes are applied. Consequences:
+  - Right after installing the module (or clearing the Call Recording app's data), the app's picker shows **no checkmarks** and a note, until you've opened Phone → Settings → Call recording → Selected numbers once.
+  - If the list changed without that screen being opened (for example Google Phone's daily `recording_stale_contact_number_cleanup_worker` removing numbers whose contact was deleted), the app's checkmarks can be **out of date**. Unticking a number that's already gone does nothing; a number added elsewhere shows unticked, and ticking it again is harmless (duplicates are skipped).
+  - From Google Phone's *Add* button the list is read fresh every time, so this doesn't apply there.
+- **Changes made in the Call Recording app are applied later.** They're queued and handed to Google Phone when you open its *Selected numbers* screen. The app can't open that screen directly: it isn't exported, and the exported `DialerSettingsActivityCompat` entry has no class in v88 (opening it crashes Google Phone), so the app opens Google Phone's main screen and tells you where to go.
+- **Request code 9 is fixed** for changes queued in the app. That's what v88's handler expects; if another version uses a different code, queued additions would be ignored there (the Add-button route is unaffected).
+- **Matching uses the last 9 digits.** Two numbers that differ only in their country code would be treated as the same number.
+- **Only verified on v88.** v247 contains the same markers (`lbb.ag`, `jmz.onClick`), but removing and the queue haven't been tested there.
+
+**Other features**
+
+- **Hooks only take effect after Google Phone restarts.** After installing a new module build, force-stop Google Phone (section 6). A running Google Phone keeps the old code.
+- **`getSupportedLocaleFromCountryCode` doesn't match v88** (4.3): v88 uses the silent TTS fallback instead of its built-in English announcement. Recording works either way.
+- **Bubble: a second, flag-based switch** (`G__enable_return_to_call_bubble` / `_v2`) could hide the bubble on other versions even with the Android 12 gate bypassed (4.4).
+- **First start of a new Google Phone version is slower.** On the first start of v247 the startup hooks took ~600 ms (opening the new, larger APK); later starts took ~100 ms.
+- **Going back to an older Google Phone version** can leave data the older version can't read (section 8). Back up first.
+- **"Record all calls" is on by default** (4.5). With it on, every call is recorded regardless of the *Selected numbers* list.
+
+---
+
+## 10. Where to learn more
 
 - **Java basics**: the module is written in Java. Any beginner Java course covers methods, `if`, classes and fields, which is enough to follow this code.
 - **Xposed API**: the original [Xposed development tutorial](https://github.com/rovo89/XposedBridge/wiki/Development-tutorial) explains `IXposedHookLoadPackage`, `handleLoadPackage` and `XC_MethodHook`.
