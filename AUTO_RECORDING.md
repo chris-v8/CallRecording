@@ -5,7 +5,7 @@ This branch extends [vvb2060/CallRecording](https://github.com/vvb2060/CallRecor
 ## Features
 
 - **Automatically record all calls**: default on, aims to cover all incoming/outgoing calls, saved contacts, and unsaved numbers, without maintaining a list of contacts.
-- **Native policy hook**: locates the `produceShouldStartAutomaticRecordingForContact` producer via a DEX string and signature, then returns Google Phone's own completed `Future<Boolean.TRUE>`. Does not click the record button, capture audio itself, or modify contacts.
+- **Native policy hook**: locates the automatic-recording producer via a DEX string and signature (`produceShouldStartAutomaticRecordingForContact` on 2xx releases; `produceShouldStartAutomaticRecording` and `produceIsCrosbyEnabledForCall` on 88.x), then returns Google Phone's own completed `Future<Boolean.TRUE>`. Does not click the record button, capture audio itself, or modify contacts.
 - **Settings UI**: launcher activity with two switches (automatic recording, diagnostics) and a hook-status summary; simplified Chinese and English.
 - **Cross-process settings**: `ContentProvider` allows only this module UID and Google Phone UID to read settings / report installation status.
 - **Fail-closed discovery**: when the marker, signature, or result factory cannot be verified unambiguously, leave Google Phone's original automatic-recording decision unchanged.
@@ -30,13 +30,13 @@ This branch extends [vvb2060/CallRecording](https://github.com/vvb2060/CallRecor
 adb logcat -d | grep 'CallRecording/AutoAll'
 ```
 
-- `Policy hooked`: successfully identified the native eligibility method; **not** a successful recording.
+- `Policy hooked`: successfully identified a native eligibility method (one line per hooked method); **not** a successful recording.
 - `first eligibility override`: Google Phone called that policy and the hook returned true.
 - `No unique supported policy method` or `No unique compatible immediate Future factory`: upstream changed enough that the safe fallback was used.
 
 ## Compatibility and limitations
 
-Analysis used the supplied Google Phone `244.0.1001930441` APK to verify that `Lkyy;->b(Object):Lajcq;` refers to `produceShouldStartAutomaticRecordingForContact`, `Lajcq;` implements `java.util.concurrent.Future`, and the producer calls the `Laiql;->z(Object):Lajcq;` immediate-result factory. No obfuscated names are embedded in the module.
+Analysis used the supplied Google Phone `244.0.1001930441` APK to verify that `Lkyy;->b(Object):Lajcq;` refers to `produceShouldStartAutomaticRecordingForContact`, `Lajcq;` implements `java.util.concurrent.Future`, and the producer calls the `Laiql;->z(Object):Lajcq;` immediate-result factory. Google Phone `88.0.472595733` has two producers of the same shape, `Ldew;->b(Object):Lsby;` (`produceShouldStartAutomaticRecording`) and `Lkup;->b(Object):Lsby;` (`produceIsCrosbyEnabledForCall`, used by the legacy in-call UI), both returning through the `Luds;->k(Object):Lsby;` factory; `247.0.1025958192` uses `Lkzj;->b(Object)` (`produceShouldStartAutomaticRecordingForContact`). No obfuscated names are embedded in the module.
 
 The hook **does not guarantee successful auto-recording on every version**: the producer may be gated by earlier flags or by device/system recorder permissions, or be renamed in a newer release. Test both hook execution and the saved audio. No root daemon or alternate audio recorder is created.
 

@@ -23,61 +23,78 @@ import de.robv.android.xposed.XposedBridge;
  */
 public final class AutoRecordingHook {
     private static final String TAG = "CallRecording/AutoAll";
-    private static final String POLICY_MARKER = "produceShouldStartAutomaticRecordingForContact";
+    /**
+     * Producers whose completed Future&lt;Boolean&gt; decides automatic recording.
+     * 2xx releases use the first; 88.x has the other two (the legacy in-call
+     * UI goes through Crosby). Every unique match is hooked.
+     */
+    private static final String[] POLICY_MARKERS = {
+            "produceShouldStartAutomaticRecordingForContact",
+            "produceShouldStartAutomaticRecording",
+            "produceIsCrosbyEnabledForCall",
+    };
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
     private static final AtomicBoolean FIRST_HIT = new AtomicBoolean();
 
     private AutoRecordingHook() {}
 
     public static void install(DexHelper dex) {
-        if (INSTALLED.get()) return;
-        try {
-            Method policy = discoverPolicy(dex);
-            if (policy == null) {
-                status("not_found", "No unique supported policy method");
-                return;
-            }
-            Method factory = discoverCompletedFutureFactory(dex, policy);
-            if (factory == null) {
-                status("factory_missing", "No unique compatible immediate Future factory");
-                return;
-            }
-            if (!INSTALLED.compareAndSet(false, true)) return;
+        if (!INSTALLED.compareAndSet(false, true)) return;
+        int hooked = 0;
+        boolean factoryMissing = false;
+        for (String marker : POLICY_MARKERS) {
             try {
-                XposedBridge.hookMethod(policy, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) {
-                        if (!SettingsBridge.allCallsEnabled()) return;
-                        try {
-                            Object immediateTrue = factory.invoke(null, Boolean.TRUE);
-                            if (!policy.getReturnType().isInstance(immediateTrue)) return;
-                            param.setResult(immediateTrue);
-                            RecordingTimingHook.markAutoPolicy();
-                            if (FIRST_HIT.compareAndSet(false, true)) {
-                                SettingsBridge.report("hit");
-                                XposedBridge.log(TAG + ": first eligibility override");
-                            }
-                        } catch (Throwable error) {
-                            // Any failure leaves Google Phone's original decision intact.
-                            if (SettingsBridge.diagnosticsEnabled()) {
-                                XposedBridge.log(TAG + ": cannot create completed Future: " + error);
-                            }
-                        }
-                    }
-                });
-                status("installed", "Policy hooked: " + policy);
+                Method policy = discoverPolicy(dex, marker);
+                if (policy == null) continue;
+                Method factory = discoverCompletedFutureFactory(dex, policy);
+                if (factory == null) {
+                    factoryMissing = true;
+                    XposedBridge.log(TAG + ": " + marker + ": no unique compatible immediate Future factory");
+                    continue;
+                }
+                hookPolicy(policy, factory);
+                hooked++;
+                XposedBridge.log(TAG + ": Policy hooked: " + policy);
             } catch (Throwable error) {
-                INSTALLED.set(false);
-                throw error;
+                XposedBridge.log(TAG + ": " + marker + ": discovery failed safely: " + error);
             }
-        } catch (Throwable error) {
-            status("error", "Discovery failed safely: " + error);
+        }
+        if (hooked > 0) {
+            status("installed", hooked + " policy method(s) hooked");
+        } else if (factoryMissing) {
+            status("factory_missing", "No unique compatible immediate Future factory");
+        } else {
+            status("not_found", "No unique supported policy method");
         }
     }
 
-    private static Method discoverPolicy(DexHelper dex) {
+    private static void hookPolicy(Method policy, Method factory) {
+        XposedBridge.hookMethod(policy, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (!SettingsBridge.allCallsEnabled()) return;
+                try {
+                    Object immediateTrue = factory.invoke(null, Boolean.TRUE);
+                    if (!policy.getReturnType().isInstance(immediateTrue)) return;
+                    param.setResult(immediateTrue);
+                    RecordingTimingHook.markAutoPolicy();
+                    if (FIRST_HIT.compareAndSet(false, true)) {
+                        SettingsBridge.report("hit");
+                        XposedBridge.log(TAG + ": first eligibility override");
+                    }
+                } catch (Throwable error) {
+                    // Any failure leaves Google Phone's original decision intact.
+                    if (SettingsBridge.diagnosticsEnabled()) {
+                        XposedBridge.log(TAG + ": cannot create completed Future: " + error);
+                    }
+                }
+            }
+        });
+    }
+
+    private static Method discoverPolicy(DexHelper dex, String marker) {
         long[] matches = dex.findMethodUsingString(
-                POLICY_MARKER, false, -1, (short) 1, null, -1,
+                marker, false, -1, (short) 1, null, -1,
                 null, null, null, false);
         Set<Method> valid = new LinkedHashSet<>();
         for (long index : matches) {
