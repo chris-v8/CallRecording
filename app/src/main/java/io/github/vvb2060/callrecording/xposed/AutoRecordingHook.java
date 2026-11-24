@@ -92,7 +92,8 @@ public final class AutoRecordingHook {
         return valid.size() == 1 ? valid.iterator().next() : null;
     }
 
-    private static Method discoverCompletedFutureFactory(DexHelper dex, Method policy) {
+    /** Finds the static immediate-Future factory that {@code policy} itself calls. */
+    static Method discoverCompletedFutureFactory(DexHelper dex, Method policy) {
         long policyIndex = dex.encodeMethodIndex(policy);
         // DexHelper.findMethodInvoking returns methods invoked BY policy.
         long[] callees = dex.findMethodInvoking(policyIndex, -1, (short) 1,

@@ -62,33 +62,41 @@ public class Init implements IXposedHookLoadPackage {
         }
     }
 
+    /** Older Google Phone names it withinCrosbyGeoFence; 2xx releases withinCallRecordingGeoFence. */
+    private static final String[] GEOFENCE_MARKERS = {
+            "withinCrosbyGeoFence", "withinCallRecordingGeoFence"};
+
     private static void hookWithinCrosbyGeoFence(DexHelper dex) {
-        var withinCrosbyGeoFence = Arrays.stream(
-                        dex.findMethodUsingString("withinCrosbyGeoFence",
-                                false,
-                                -1,
-                                (short) 0,
-                                "Z",
-                                -1,
-                                null,
-                                null,
-                                null,
-                                true))
-                .mapToObj(dex::decodeMethodIndex)
-                .filter(Objects::nonNull)
-                .findFirst();
-        if (withinCrosbyGeoFence.isPresent()) {
-            var method = withinCrosbyGeoFence.get();
-            Log.d(TAG, "withinCrosbyGeoFence: " + method);
+        boolean hooked = false;
+        for (String marker : GEOFENCE_MARKERS) {
+            var geofence = Arrays.stream(
+                            dex.findMethodUsingString(marker,
+                                    false,
+                                    -1,
+                                    (short) 0,
+                                    "Z",
+                                    -1,
+                                    null,
+                                    null,
+                                    null,
+                                    true))
+                    .mapToObj(dex::decodeMethodIndex)
+                    .filter(Objects::nonNull)
+                    .findFirst();
+            if (!geofence.isPresent()) continue;
+            var method = geofence.get();
+            Log.d(TAG, marker + ": " + method);
             XposedBridge.hookMethod(method, new XC_MethodReplacement() {
                 @Override
                 protected Object replaceHookedMethod(MethodHookParam param) {
-                    Log.d(TAG, "withinCrosbyGeoFence: true");
+                    Log.d(TAG, marker + ": true");
                     return true;
                 }
             });
-        } else {
-            Log.w(TAG, "withinCrosbyGeoFence method not found");
+            hooked = true;
+        }
+        if (!hooked) {
+            Log.w(TAG, "geofence method not found");
         }
     }
 
@@ -297,7 +305,7 @@ public class Init implements IXposedHookLoadPackage {
     /**
      * Eligibility hooks must be in place before any Google Phone code runs.
      * A cold start for recording_geofence_check_worker otherwise sees the
-     * unhooked canRecordCall()/withinCrosbyGeoFence() result and turns the
+     * unhooked canRecordCall()/geofence result and turns the
      * "always record" settings off. Returns the open helper for the worker,
      * or null if it could not be opened.
      */
@@ -335,6 +343,7 @@ public class Init implements IXposedHookLoadPackage {
                 runHookStep("automatic-policy", () -> AutoRecordingHook.install(dex));
                 runHookStep("native-recorder-timing-and-early", () ->
                         RecordingTimingHook.installNativePipeline(dex));
+                runHookStep("bubble-android-s-gate", () -> BubbleHook.install(dex));
             }
         } finally {
             if (dex != null) {
