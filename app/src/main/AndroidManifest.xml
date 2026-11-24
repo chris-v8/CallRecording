@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Multi-select list for Google Phone's "Selected numbers"; contacts never leave the phone. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Android 11+ package visibility: open Google Phone's settings after picking. -->
+    <queries>
+        <package android:name="com.google.android.dialer" />
+    </queries>
+
     <application
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault">
@@ -14,6 +22,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Exported so Google Phone's Add button can open it; it only answers
+             Google Phone and this app (see NumberPickerActivity.onCreate). -->
+        <activity
+            android:name=".settings.NumberPickerActivity"
+            android:exported="true"
+            android:label="@string/picker_title" />
 
         <provider
             android:name=".settings.SettingsProvider"

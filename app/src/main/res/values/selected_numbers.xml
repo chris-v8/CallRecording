@@ -1,0 +1,15 @@
+<resources>
+    <string name="sel_section">Selected numbers</string>
+    <string name="sel_open">Select numbers to always record</string>
+    <string name="sel_open_description">Pick several contacts at once and add them to Google Phone\'s \"Selected numbers\" list. They are added the next time that screen opens. Google Phone\'s \"Selected numbers\" switch must be on for them to be recorded.</string>
+    <string name="sel_pending">Waiting to be added: %d. Open Phone → Settings → Call recording → Selected numbers.</string>
+    <string name="sel_multi">Multi-select in Phone\'s Add button</string>
+    <string name="sel_multi_description">Google Phone\'s \"Selected numbers → Add\" opens this module\'s multi-select list instead of the one-contact picker. Restart Google Phone after changing.</string>
+    <string name="picker_title">Select numbers</string>
+    <string name="picker_search">Search name or number</string>
+    <string name="picker_add">Add (%d)</string>
+    <string name="picker_permission">Contacts permission is needed to list your phone numbers.</string>
+    <string name="picker_empty">No phone numbers found.</string>
+    <string name="picker_queued">%d number(s) ready. In Phone, open Settings → Call recording → Selected numbers to add them.</string>
+    <string name="picker_no_dialer">Couldn\'t open Google Phone. Open Settings → Call recording → Selected numbers in Phone to add them.</string>
+</resources>

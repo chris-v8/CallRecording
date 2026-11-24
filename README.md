@@ -24,6 +24,7 @@ This fork is based on [vvb2060/CallRecording](https://github.com/vvb2060/CallRec
    - [4.3 Supporting a newer Google Phone (v247)](#43-supporting-a-newer-google-phone-v247)
    - [4.4 The "return to call" bubble disappeared on Android 12+](#44-the-return-to-call-bubble-disappeared-on-android-12)
    - [4.5 "Record all calls" did nothing on v88](#45-record-all-calls-did-nothing-on-v88)
+   - [4.6 Adding several "Selected numbers" at once](#46-adding-several-selected-numbers-at-once)
 5. [Tour of the code](#5-tour-of-the-code)
 6. [Building, installing and testing](#6-building-installing-and-testing)
 7. [Reading the logs](#7-reading-the-logs)
@@ -52,6 +53,7 @@ Status per Google Phone version:
 | Settings no longer switch themselves off | ✅ tested | ✅ (same protection) |
 | "Record all calls" (module setting) | ✅ tested | ✅ tested |
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
+| Multi-select for "Selected numbers" | ⏳ waiting for test | ⏳ waiting for test |
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
 
@@ -342,6 +344,58 @@ Status: **tested on v88 and v247.** The LSPosed log shows two `Policy hooked:` l
 
 ---
 
+### 4.6 Adding several "Selected numbers" at once
+
+**Wish.** Google Phone's *Call recording → Selected numbers → Add* lets you pick **one** contact at a time. Adding a dozen people means a dozen round trips.
+
+**What we found** (v88 classes `cym`, `dic`, `dbt`, `csf`; same markers in v247):
+
+```
+Add button  → Intent(ACTION_PICK, type "vnd.android.cursor.dir/phone_v2")   // "pick ONE phone number"
+            → startActivityForResult(…, 9)
+Result      → dic.Z(9, RESULT_OK, data)        // log: "uri received from system contact picker"
+            → read column data1 (the number) from data.getData()
+            → normalise the number (+48…)
+            → settings store.updateData( add number if not already there )
+```
+
+The last step matters for safety: each pick hands the settings store a small "add this one number" change. The store applies changes **one after another** and skips duplicates, so adding many numbers quickly can't overwrite each other. Nothing in the module writes Google Phone's settings file itself.
+
+**The feature.** The Call Recording app gets a **multi-select list** of your phone numbers (`NumberPickerActivity`: search, checkboxes, "Add (N)"). There are two ways in:
+
+1. **From Google Phone:** *Selected numbers → Add* opens the module's list instead of the one-contact picker. When you tap *Add (N)*, the module calls Google Phone's **own** result handler once per number, exactly as if you'd picked them one by one.
+2. **From the Call Recording app:** *Select numbers to always record* → pick → the numbers are queued and Phone's settings open. When you open *Call recording → Selected numbers*, Google Phone adds the queued numbers through the same handler.
+
+`SelectedNumbersHook.java` (inside Google Phone), simplified:
+
+```java
+// 1. Only while the "Add" button's click is being handled…
+hookAddClick(click):  IN_ADD_CLICK = true … false
+
+// …redirect "pick one phone number" to the module's list (other screens keep the system picker)
+Activity.startActivityForResult(intent, …):
+    if (IN_ADD_CLICK && PICK && type == phone_v2 && setting on && module list installed)
+        intent → NumberPickerActivity
+
+// 2. Several numbers came back → run Google Phone's own handler once per number
+resultHandler(requestCode, resultCode, data):
+    if (data has the module's list of ≥ 2 numbers)
+        for each uri: original handler(requestCode, resultCode, Intent(data = uri))
+
+// 3. Queue from the module app → applied when the Selected numbers screen appears
+onViewCreated(...) → later: for each queued uri: original handler(9, RESULT_OK, Intent(data = uri))
+```
+
+Safety rules:
+- With one contact ticked, the result looks exactly like the system picker's, and Google Phone's code handles it unchanged.
+- If the module's list isn't installed or the setting *Multi-select in Phone's Add button* is off, the Add button opens the normal picker.
+- The list only answers Google Phone and the Call Recording app. The queue stores contact *links*, not numbers, and is emptied once handed over.
+- Turning on Google Phone's *Selected numbers* switch is still up to you; the module only adds numbers.
+
+The Call Recording app now asks for the **Contacts** permission, to show the list. Contacts never leave the phone.
+
+---
+
 ## 5. Tour of the code
 
 All the hooking code lives in `app/src/main/java/io/github/vvb2060/callrecording/`:
@@ -353,11 +407,13 @@ xposed/
   DexHelper.java            Java front-end for the C++ search tool (app/src/main/jni/).
   AutoRecordingHook.java    "Record all calls" (4.5).
   BubbleHook.java           Android 12 bubble gate (4.4).
+  SelectedNumbersHook.java  Multi-select for Google Phone's "Selected numbers" (4.6).
   RecordingTimingHook.java  Diagnostics only: logs when a call connects / recording starts.
   SettingsBridge.java       Lets hooks inside Google Phone read the module's settings.
 settings/
   SettingsActivity.java     The "Call Recording" app screen (switches + hook status).
   SettingsProvider.java     Stores those settings; only Google Phone and the module may read them.
+  NumberPickerActivity.java Multi-select list of phone numbers (4.6).
 assets/xposed_init          Tells LSPosed which class to start: ...xposed.Init
 ```
 

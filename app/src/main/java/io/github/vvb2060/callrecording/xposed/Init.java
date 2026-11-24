@@ -344,6 +344,7 @@ public class Init implements IXposedHookLoadPackage {
                 runHookStep("native-recorder-timing-and-early", () ->
                         RecordingTimingHook.installNativePipeline(dex));
                 runHookStep("bubble-android-s-gate", () -> BubbleHook.install(dex));
+                runHookStep("selected-numbers-multi-select", () -> SelectedNumbersHook.install(dex));
             }
         } finally {
             if (dex != null) {

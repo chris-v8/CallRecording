@@ -9,9 +9,14 @@ import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
 
+import java.util.ArrayList;
+import java.util.Collections;
+
 /**
  * Cross-process settings bridge. Calls are restricted to the module UID and
- * com.google.android.dialer UID. No call numbers or audio are stored.
+ * com.google.android.dialer UID. No call numbers or audio are stored; numbers
+ * picked for Google Phone's Selected numbers list are queued as contact Data
+ * URIs and handed over once.
  */
 public final class SettingsProvider extends ContentProvider {
     public static final String PREFS = "module_settings";
@@ -20,6 +25,9 @@ public final class SettingsProvider extends ContentProvider {
     public static final String LAST_STATUS = "last_status";
     public static final String LAST_CHECK = "last_check";
     public static final String LAST_HIT = "last_hit";
+    public static final String MULTI_PICK = "multi_pick";
+    /** Contact Data URIs (not numbers) waiting for Google Phone's Selected numbers screen. */
+    public static final String PENDING = "pending_numbers";
 
     @Override
     public boolean onCreate() {
@@ -36,6 +44,14 @@ public final class SettingsProvider extends ContentProvider {
             Bundle reply = new Bundle();
             reply.putBoolean(AUTO, prefs.getBoolean(AUTO, true));
             reply.putBoolean(DEBUG, prefs.getBoolean(DEBUG, false));
+            reply.putBoolean(MULTI_PICK, prefs.getBoolean(MULTI_PICK, true));
+            return reply;
+        }
+        if ("take_pending".equals(method)) {
+            Bundle reply = new Bundle();
+            reply.putStringArrayList(PENDING, new ArrayList<>(
+                    prefs.getStringSet(PENDING, Collections.emptySet())));
+            prefs.edit().remove(PENDING).apply();
             return reply;
         }
         if ("report".equals(method)) {

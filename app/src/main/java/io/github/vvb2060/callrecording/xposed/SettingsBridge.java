@@ -23,6 +23,23 @@ final class SettingsBridge {
         return options != null && options.getBoolean("diagnostic_logging", false);
     }
 
+    static boolean multiPickEnabled() {
+        Bundle options = read();
+        return options != null && options.getBoolean("multi_pick", true);
+    }
+
+    /** Contact Data URIs picked in the module app; the provider clears them once taken. */
+    static java.util.List<String> takePendingNumbers() {
+        try {
+            Application application = currentApplication();
+            if (application == null) return null;
+            Bundle reply = application.getContentResolver().call(URI, "take_pending", null, null);
+            return reply == null ? null : reply.getStringArrayList("pending_numbers");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     static void report(String code) {
         try {
             Application application = currentApplication();

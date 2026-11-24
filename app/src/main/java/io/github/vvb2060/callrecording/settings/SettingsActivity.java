@@ -2,6 +2,7 @@ package io.github.vvb2060.callrecording.settings;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.format.DateFormat;
@@ -42,6 +43,11 @@ public final class SettingsActivity extends Activity {
         setting(content, R.string.auto_debug, R.string.auto_debug_description,
                 SettingsProvider.DEBUG, false);
 
+        add(content, label(R.string.sel_section, 16, true), 24);
+        selectNumbers(content);
+        setting(content, R.string.sel_multi, R.string.sel_multi_description,
+                SettingsProvider.MULTI_PICK, true);
+
         add(content, label(R.string.auto_status_heading, 16, true), 22);
         status = label(R.string.auto_status_unknown, 14, false);
         add(content, status, 9);
@@ -60,6 +66,39 @@ public final class SettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (status != null) refreshStatus();
+        if (pending != null) refreshPending();
+    }
+
+    private TextView pending;
+
+    /** Opens the multi-select list; picks are queued for Google Phone's Selected numbers. */
+    private void selectNumbers(LinearLayout parent) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setMinimumHeight(dp(90));
+        row.setPadding(0, dp(10), 0, dp(10));
+        row.addView(label(R.string.sel_open, 16, true));
+        TextView subtitle = label(R.string.sel_open_description, 13, false);
+        subtitle.setPadding(0, dp(5), dp(12), 0);
+        row.addView(subtitle);
+        pending = label(R.string.sel_open, 13, true);
+        pending.setPadding(0, dp(5), dp(12), 0);
+        row.addView(pending);
+        row.setOnClickListener(view ->
+                startActivity(new Intent(this, NumberPickerActivity.class)));
+        add(parent, row, 5);
+        refreshPending();
+
+        View separator = new View(this);
+        separator.setBackgroundColor(0x44888888);
+        parent.addView(separator, new LinearLayout.LayoutParams(-1, dp(1)));
+    }
+
+    private void refreshPending() {
+        int count = preferences.getStringSet(SettingsProvider.PENDING,
+                java.util.Collections.emptySet()).size();
+        pending.setText(getString(R.string.sel_pending, count));
+        pending.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
     }
 
     private void setting(LinearLayout parent, int title, int description,
