@@ -53,7 +53,8 @@ Status per Google Phone version:
 | Settings no longer switch themselves off | ✅ tested | ✅ (same protection) |
 | "Record all calls" (module setting) | ✅ tested | ✅ tested |
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
-| Multi-select for "Selected numbers" | ⏳ waiting for test | ⏳ waiting for test |
+| Multi-select for "Selected numbers": Phone's Add button | ✅ tested | ⏳ waiting for test |
+| Multi-select for "Selected numbers": from the Call Recording app | ⏳ waiting for test | ⏳ waiting for test |
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
 
@@ -364,7 +365,9 @@ The last step matters for safety: each pick hands the settings store a small "ad
 **The feature.** The Call Recording app gets a **multi-select list** of your phone numbers (`NumberPickerActivity`: search, checkboxes, "Add (N)"). There are two ways in:
 
 1. **From Google Phone:** *Selected numbers → Add* opens the module's list instead of the one-contact picker. When you tap *Add (N)*, the module calls Google Phone's **own** result handler once per number, exactly as if you'd picked them one by one.
-2. **From the Call Recording app:** *Select numbers to always record* → pick → the numbers are queued and Phone's settings open. When you open *Call recording → Selected numbers*, Google Phone adds the queued numbers through the same handler.
+2. **From the Call Recording app:** *Select numbers to always record* → pick → the numbers are queued and the Phone app opens. Go to *⋮ → Settings → Call recording → Selected numbers*; when that screen opens, Google Phone adds the queued numbers through the same handler.
+
+   The Call Recording app can't jump straight to Phone's settings. That screen (`multibindingsettings.impl.DialerSettingsActivity`) isn't exported, and the exported `settings.DialerSettingsActivityCompat` entry has no class behind it in v88, so opening it crashes Google Phone. Opening the Phone app's main screen works on every version.
 
 `SelectedNumbersHook.java` (inside Google Phone), simplified:
 

@@ -45,8 +45,6 @@ import io.github.vvb2060.callrecording.R;
 public final class NumberPickerActivity extends Activity {
     public static final String EXTRA_URIS = "io.github.vvb2060.callrecording.extra.URIS";
     private static final String DIALER = "com.google.android.dialer";
-    private static final String DIALER_SETTINGS =
-            "com.android.dialer.settings.DialerSettingsActivityCompat";
     private static final int REQUEST_CONTACTS = 1;
 
     private static final class Entry {
@@ -240,9 +238,13 @@ public final class NumberPickerActivity extends Activity {
                 .putStringSet(SettingsProvider.PENDING, pending).apply();
         Toast.makeText(this, getString(R.string.picker_queued, pending.size()),
                 Toast.LENGTH_LONG).show();
+        // Google Phone's settings activity isn't exported (and the exported
+        // DialerSettingsActivityCompat entry has no class in 88.x), so open its
+        // main screen; the toast says where to go from there.
+        Intent phone = getPackageManager().getLaunchIntentForPackage(DIALER);
         try {
-            startActivity(new Intent().setClassName(DIALER, DIALER_SETTINGS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            if (phone == null) throw new ActivityNotFoundException();
+            startActivity(phone.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (ActivityNotFoundException | SecurityException error) {
             Toast.makeText(this, R.string.picker_no_dialer, Toast.LENGTH_LONG).show();
         }
