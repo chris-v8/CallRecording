@@ -1,17 +1,18 @@
 <resources>
     <string name="sel_section">Selected numbers</string>
     <string name="sel_open">Select numbers to always record</string>
-    <string name="sel_open_description">Pick several contacts at once and add them to Google Phone\'s \"Selected numbers\" list. They are added the next time that screen opens. Google Phone\'s \"Selected numbers\" switch must be on for them to be recorded.</string>
-    <string name="sel_pending">Waiting to be added: %d. Open Phone → Settings → Call recording → Selected numbers.</string>
+    <string name="sel_open_description">Tick or untick several contacts at once to add them to, or remove them from, Google Phone\'s \"Selected numbers\" list. Changes are applied the next time that screen opens. Google Phone\'s \"Selected numbers\" switch must be on for them to be recorded.</string>
+    <string name="sel_pending">Waiting: %1$d to add, %2$d to remove. Open Phone → Settings → Call recording → Selected numbers.</string>
     <string name="sel_multi">Multi-select in Phone\'s Add button</string>
     <string name="sel_multi_description">Google Phone\'s \"Selected numbers → Add\" opens this module\'s multi-select list instead of the one-contact picker. Restart Google Phone after changing.</string>
     <string name="picker_title">Select numbers</string>
     <string name="picker_search">Search name or number</string>
-    <string name="picker_add">Add (%d)</string>
+    <string name="picker_save">Save (+%1$d / −%2$d)</string>
+    <string name="picker_on_list">✓ On the list (untick to remove)</string>
+    <string name="picker_will_remove">✗ Will be removed</string>
     <string name="picker_permission">Contacts permission is needed to list your phone numbers.</string>
     <string name="picker_empty">No phone numbers found.</string>
-    <string name="picker_queued">%d number(s) ready. In Phone, open Settings → Call recording → Selected numbers to add them.</string>
-    <string name="picker_no_dialer">Couldn\'t open Google Phone. Open Settings → Call recording → Selected numbers in Phone to add them.</string>
-    <string name="picker_already">✓ Already on the list</string>
-    <string name="picker_existing_unknown">Numbers already on Google Phone\'s list are marked after you open Phone → Settings → Call recording → Selected numbers once.</string>
+    <string name="picker_queued">Ready: %1$d to add, %2$d to remove. In Phone, open Settings → Call recording → Selected numbers to apply.</string>
+    <string name="picker_no_dialer">Couldn\'t open Google Phone. Open Settings → Call recording → Selected numbers in Phone to apply the changes.</string>
+    <string name="picker_existing_unknown">Numbers already on Google Phone\'s list are shown after you open Phone → Settings → Call recording → Selected numbers once.</string>
 </resources>

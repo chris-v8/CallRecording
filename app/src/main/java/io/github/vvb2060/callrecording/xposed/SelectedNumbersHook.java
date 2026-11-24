@@ -5,16 +5,24 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 
 import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Member;
-import java.nio.file.Files;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -25,16 +33,19 @@ import de.robv.android.xposed.XposedBridge;
  * Google Phone adds one number per pick: its "Add" button launches the system
  * picker for a single phone number (ACTION_PICK, phone_v2) and its fragment's
  * onActivityResult reads data1 from the returned Data row and appends it to the
- * settings DataStore. Each append is an updateData() transform that skips
- * duplicates, so several appends in a row are safe.
+ * settings DataStore. Removing a row sends an event carrying the stored number
+ * to a listener that removes it from the DataStore. Both are updateData()
+ * transforms (append-if-missing / remove-these), so several in a row are safe.
  *
  * This hook never touches that storage. It
  *   1. sends the Add button to this module's multi-select picker,
- *   2. replays Google Phone's own onActivityResult once per picked number, and
- *   3. applies numbers queued in the module app when the screen is opened.
+ *   2. replays Google Phone's own remove event and onActivityResult once per
+ *      number the user unticked or ticked, and
+ *   3. applies changes queued in the module app when that screen is opened.
  *
- * Verified on 88.0.472595733 (dic.Z, cym.onClick) and 247.0.1025958192
- * (lbb.ag, jmz.onClick). Anything unrecognised leaves the screen stock.
+ * Verified on 88.0.472595733 (dic.Z, cym.onClick, tbo.r, dii) and markers on
+ * 247.0.1025958192 (lbb.ag, jmz.onClick). Anything unrecognised leaves the
+ * screen stock.
  */
 final class SelectedNumbersHook {
     private static final String TAG = "CallRecording/Selected";
@@ -45,6 +56,8 @@ final class SelectedNumbersHook {
     private static final String MODULE = "io.github.vvb2060.callrecording";
     private static final String PICKER = MODULE + ".settings.NumberPickerActivity";
     static final String EXTRA_URIS = MODULE + ".extra.URIS";
+    /** Stored numbers (exactly as in Google Phone's list) the user unticked. */
+    static final String EXTRA_REMOVE = MODULE + ".extra.REMOVE_NUMBERS";
     /** Numbers already on the list, so the picker can show them as added. */
     static final String EXTRA_EXISTING = MODULE + ".extra.EXISTING_NUMBERS";
     /** Google Phone's DataStore file for call recording settings (88 and 247). */
@@ -54,6 +67,22 @@ final class SelectedNumbersHook {
 
     /** True only while Google Phone handles a click on the "Add" button. */
     private static final ThreadLocal<Boolean> IN_ADD_CLICK = new ThreadLocal<>();
+
+    /** Per Selected numbers screen: how to send Google Phone's "remove this number" event. */
+    private static final Map<Object, Remover> REMOVERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static final class Remover {
+        final Object listener;
+        final Method handle;
+        final Constructor<?> event;
+
+        Remover(Object listener, Method handle, Constructor<?> event) {
+            this.listener = listener;
+            this.handle = handle;
+            this.event = event;
+        }
+    }
 
     private SelectedNumbersHook() {}
 
@@ -67,11 +96,13 @@ final class SelectedNumbersHook {
         hookResult(result);
         XposedBridge.log(TAG + ": result handler hooked: " + result);
 
-        Method onViewCreated = viewCreatedOf(result.getDeclaringClass());
+        Class<?> fragment = result.getDeclaringClass();
+        Method onViewCreated = viewCreatedOf(fragment);
         if (onViewCreated != null) {
+            hookRemoveListener(dex, onViewCreated, fragment);
             hookPendingQueue(onViewCreated, result);
         } else {
-            XposedBridge.log(TAG + ": no onViewCreated, numbers queued in the app are not applied");
+            XposedBridge.log(TAG + ": no onViewCreated, removing and queued changes unavailable");
         }
 
         Method click = findUnique(dex, CLICK_MARKER, (short) 1, View.class);
@@ -83,7 +114,7 @@ final class SelectedNumbersHook {
         }
     }
 
-    /** Google Phone's result handler with a multi-pick result: replay it per number. */
+    /** Google Phone's result handler with a multi-pick result: replay removes and adds. */
     private static void hookResult(Method result) {
         XposedBridge.hookMethod(result, new XC_MethodHook() {
             @Override
@@ -91,22 +122,23 @@ final class SelectedNumbersHook {
                 Intent data = (Intent) param.args[2];
                 if (data == null) return;
                 ArrayList<Uri> uris;
+                ArrayList<String> remove;
                 try {
                     uris = data.getParcelableArrayListExtra(EXTRA_URIS);
+                    remove = data.getStringArrayListExtra(EXTRA_REMOVE);
                 } catch (Throwable error) {
                     return;
                 }
-                if (uris == null || uris.size() < 2) return; // single pick: stock path
-                int added = replay(result, param.thisObject, (Integer) param.args[0],
-                        (Integer) param.args[1], uris);
+                boolean removing = remove != null && !remove.isEmpty();
+                if (!removing && (uris == null || uris.size() < 2)) return; // stock path
+                apply(result, param.thisObject, (Integer) param.args[0],
+                        (Integer) param.args[1], uris, remove, "multi-select");
                 param.setResult(null);
-                XposedBridge.log(TAG + ": multi-select passed " + added + "/" + uris.size()
-                        + " numbers to Google Phone");
             }
         });
     }
 
-    /** Numbers picked from the module app wait until this screen is shown. */
+    /** Changes picked in the module app wait until this screen is shown. */
     private static void hookPendingQueue(Method onViewCreated, Method result) {
         XposedBridge.hookMethod(onViewCreated, new XC_MethodHook() {
             @Override
@@ -117,33 +149,120 @@ final class SelectedNumbersHook {
                 // Run after the fragment has finished starting.
                 view.post(() -> {
                     reportSnapshot(view.getContext());
-                    List<String> pending = SettingsBridge.takePendingNumbers();
-                    if (pending == null || pending.isEmpty()) return;
+                    Bundle pending = SettingsBridge.takePending();
+                    if (pending == null) return;
                     List<Uri> uris = new ArrayList<>();
-                    for (String value : pending) uris.add(Uri.parse(value));
-                    int added = replay(result, fragment, PICK_REQUEST, Activity.RESULT_OK, uris);
-                    XposedBridge.log(TAG + ": applied " + added + "/" + uris.size()
-                            + " numbers queued in the module app");
-                    // The adds are saved asynchronously; refresh the module's copy afterwards.
-                    view.postDelayed(() -> reportSnapshot(view.getContext()), 3000);
+                    ArrayList<String> add = pending.getStringArrayList("pending_numbers");
+                    if (add != null) for (String value : add) uris.add(Uri.parse(value));
+                    ArrayList<String> remove = pending.getStringArrayList("pending_removals");
+                    if (uris.isEmpty() && (remove == null || remove.isEmpty())) return;
+                    apply(result, fragment, PICK_REQUEST, Activity.RESULT_OK, uris, remove,
+                            "queued in the module app");
                 });
             }
         });
     }
 
-    private static int replay(Method result, Object fragment, int requestCode,
-                              int resultCode, List<Uri> uris) {
-        int added = 0;
-        for (Uri uri : uris) {
-            try {
-                XposedBridge.invokeOriginalMethod(result, fragment,
-                        new Object[]{requestCode, resultCode, new Intent().setData(uri)});
-                added++;
-            } catch (Throwable error) {
-                XposedBridge.log(TAG + ": Google Phone rejected one number: " + error);
+    private static void apply(Method result, Object fragment, int requestCode, int resultCode,
+                              List<Uri> uris, List<String> remove, String source) {
+        int removed = 0;
+        if (remove != null && !remove.isEmpty()) {
+            Remover remover = REMOVERS.get(fragment);
+            if (remover == null) {
+                XposedBridge.log(TAG + ": remove listener unknown, " + remove.size()
+                        + " number(s) not removed");
+            } else {
+                for (String number : remove) {
+                    try {
+                        remover.handle.invoke(remover.listener, remover.event.newInstance(number));
+                        removed++;
+                    } catch (Throwable error) {
+                        XposedBridge.log(TAG + ": Google Phone rejected a removal: " + error);
+                    }
+                }
             }
         }
-        return added;
+        int added = 0;
+        if (uris != null) {
+            for (Uri uri : uris) {
+                try {
+                    XposedBridge.invokeOriginalMethod(result, fragment,
+                            new Object[]{requestCode, resultCode, new Intent().setData(uri)});
+                    added++;
+                } catch (Throwable error) {
+                    XposedBridge.log(TAG + ": Google Phone rejected one number: " + error);
+                }
+            }
+        }
+        XposedBridge.log(TAG + ": " + source + ": added " + added + "/"
+                + (uris == null ? 0 : uris.size()) + ", removed " + removed + "/"
+                + (remove == null ? 0 : remove.size()));
+        // Both are saved asynchronously; refresh the module's copy afterwards.
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            Context context = SettingsBridge.application();
+            if (context != null) reportSnapshot(context);
+        }, 3000);
+    }
+
+    /**
+     * The screen registers its event listeners in onViewCreated through a
+     * static register(fragment, eventClass, listener). Remember the listener
+     * whose event carries a single String: the "remove this number" event.
+     */
+    private static void hookRemoveListener(DexHelper dex, Method onViewCreated, Class<?> fragment) {
+        Set<Method> registers = new LinkedHashSet<>();
+        for (long index : dex.findMethodInvoking(dex.encodeMethodIndex(onViewCreated), -1,
+                (short) 3, null, -1, null, null, null, false)) {
+            Member member = dex.decodeMethodIndex(index);
+            if (!(member instanceof Method)) continue;
+            Method method = (Method) member;
+            Class<?>[] types = method.getParameterTypes();
+            if (!Modifier.isStatic(method.getModifiers())) continue;
+            if (!types[0].isAssignableFrom(fragment) || types[1] != Class.class) continue;
+            if (!types[2].isInterface()) continue;
+            registers.add(method);
+        }
+        if (registers.size() != 1) {
+            XposedBridge.log(TAG + ": event registration not found, removing unavailable");
+            return;
+        }
+        Method register = registers.iterator().next();
+        Method handle = singleMethod(register.getParameterTypes()[2]);
+        if (handle == null) {
+            XposedBridge.log(TAG + ": unexpected listener type, removing unavailable");
+            return;
+        }
+        XposedBridge.hookMethod(register, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                if (param.args[0] == null || param.args[0].getClass() != fragment) return;
+                if (!(param.args[1] instanceof Class) || param.args[2] == null) return;
+                try {
+                    Constructor<?> event = ((Class<?>) param.args[1])
+                            .getDeclaredConstructor(String.class);
+                    if (!handle.getParameterTypes()[0].isAssignableFrom(event.getDeclaringClass())) {
+                        return;
+                    }
+                    event.setAccessible(true);
+                    REMOVERS.put(param.args[0], new Remover(param.args[2], handle, event));
+                } catch (NoSuchMethodException ignored) {
+                    // Not the remove event (e.g. the "turn on" event has no number).
+                }
+            }
+        });
+        XposedBridge.log(TAG + ": remove event hooked via " + register);
+    }
+
+    private static Method singleMethod(Class<?> listenerInterface) {
+        Method found = null;
+        for (Method method : listenerInterface.getMethods()) {
+            if (!Modifier.isAbstract(method.getModifiers())) continue;
+            if (method.getParameterCount() != 1) return null;
+            if (found != null) return null;
+            found = method;
+        }
+        if (found != null) found.setAccessible(true);
+        return found;
     }
 
     private static void hookAddClick(Method click) {
@@ -235,7 +354,7 @@ final class SelectedNumbersHook {
             if (!(member instanceof Method)) continue;
             Method method = (Method) member;
             if (method.getReturnType() != void.class) continue;
-            if (!java.util.Arrays.equals(method.getParameterTypes(), parameters)) continue;
+            if (!Arrays.equals(method.getParameterTypes(), parameters)) continue;
             valid.add(method);
         }
         return valid.size() == 1 ? valid.iterator().next() : null;

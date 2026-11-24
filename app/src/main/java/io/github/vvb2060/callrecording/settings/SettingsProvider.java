@@ -29,6 +29,8 @@ public final class SettingsProvider extends ContentProvider {
     public static final String MULTI_PICK = "multi_pick";
     /** Contact Data URIs (not numbers) waiting for Google Phone's Selected numbers screen. */
     public static final String PENDING = "pending_numbers";
+    /** Stored numbers to remove from Google Phone's Selected numbers list. */
+    public static final String PENDING_REMOVALS = "pending_removals";
     /** Copy of Google Phone's Selected numbers, so the picker can mark them as added. */
     public static final String SNAPSHOT = "selected_snapshot";
 
@@ -54,7 +56,9 @@ public final class SettingsProvider extends ContentProvider {
             Bundle reply = new Bundle();
             reply.putStringArrayList(PENDING, new ArrayList<>(
                     prefs.getStringSet(PENDING, Collections.emptySet())));
-            prefs.edit().remove(PENDING).apply();
+            reply.putStringArrayList(PENDING_REMOVALS, new ArrayList<>(
+                    prefs.getStringSet(PENDING_REMOVALS, Collections.emptySet())));
+            prefs.edit().remove(PENDING).remove(PENDING_REMOVALS).apply();
             return reply;
         }
         if ("selected_snapshot".equals(method)) {

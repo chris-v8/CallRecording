@@ -24,7 +24,7 @@ This fork is based on [vvb2060/CallRecording](https://github.com/vvb2060/CallRec
    - [4.3 Supporting a newer Google Phone (v247)](#43-supporting-a-newer-google-phone-v247)
    - [4.4 The "return to call" bubble disappeared on Android 12+](#44-the-return-to-call-bubble-disappeared-on-android-12)
    - [4.5 "Record all calls" did nothing on v88](#45-record-all-calls-did-nothing-on-v88)
-   - [4.6 Adding several "Selected numbers" at once](#46-adding-several-selected-numbers-at-once)
+   - [4.6 Adding and removing several "Selected numbers" at once](#46-adding-and-removing-several-selected-numbers-at-once)
 5. [Tour of the code](#5-tour-of-the-code)
 6. [Building, installing and testing](#6-building-installing-and-testing)
 7. [Reading the logs](#7-reading-the-logs)
@@ -55,7 +55,7 @@ Status per Google Phone version:
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
 | Multi-select for "Selected numbers": Phone's Add button | ✅ tested | ⏳ waiting for test |
 | Multi-select for "Selected numbers": from the Call Recording app | ✅ tested | ⏳ waiting for test |
-| Multi-select shows numbers already on the list | ⏳ waiting for test | ⏳ waiting for test |
+| Multi-select shows numbers already on the list, untick to remove | ⏳ waiting for test | ⏳ waiting for test |
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
 
@@ -346,7 +346,7 @@ Status: **tested on v88 and v247.** The LSPosed log shows two `Policy hooked:` l
 
 ---
 
-### 4.6 Adding several "Selected numbers" at once
+### 4.6 Adding and removing several "Selected numbers" at once
 
 **Wish.** Google Phone's *Call recording → Selected numbers → Add* lets you pick **one** contact at a time. Adding a dozen people means a dozen round trips.
 
@@ -396,12 +396,16 @@ Safety rules:
 - The list only answers Google Phone and the Call Recording app. The queue stores contact *links*, not numbers, and is emptied once handed over.
 - Turning on Google Phone's *Selected numbers* switch is still up to you; the module only adds numbers.
 
-**Numbers already on the list** appear checked and greyed out (*✓ Already on the list*) and can't be unticked. Removing stays in Google Phone's own list. Only newly ticked numbers are sent. How the module knows what's on the list:
+**Numbers already on the list start ticked** (*✓ On the list (untick to remove)*). Untick one to remove it (*✗ Will be removed*), tick new ones to add them; the button shows **Save (+added / −removed)**.
 
-- Inside Google Phone, `ProtoNumbers.java` **reads** (never writes) Google Phone's settings file `files/CallRecordingSettingsData.pb`. The file is in Google's *protobuf* format; every field carries a small tag saying how long it is, so the reader can walk the whole file without knowing Google's (scrambled) layout, and keeps only values that look like phone numbers (`+` and 6–18 digits). Tested on the real v88 file: 21 of 21 numbers found.
+Removing reuses Google Phone's own remove code, the same way adding does. When you tap remove on a row in Google Phone, the row sends a small *event* carrying the stored number to the screen's listener, which hands the settings store a "remove these numbers" change (v88: event `dii(String)` → listener `dhf` → `eej.x(Set)`). The screen registers that listener when it opens, through `tbo.r(fragment, eventClass, listener)`. The module watches those registrations, remembers the one whose event carries a single phone number, and later sends that same event for each number you unticked, as if you'd tapped remove on those rows. If the listener can't be found on some version, removals are skipped (and logged); adds still work.
+
+How the module knows what's on the list:
+
+- Inside Google Phone, `ProtoNumbers.java` **reads** (never writes) Google Phone's settings file `files/CallRecordingSettingsData.pb`. The file is in Google's *protobuf* format; every field carries a small tag saying how long it is, so the reader can walk the whole file without knowing Google's (scrambled) layout, and keeps only values that look like phone numbers (`+` and 6–18 digits). Tested on the real v88 file: 21 of 21 (and later 25 of 25) numbers found.
 - **From Google Phone's Add button**, the current list is handed to the picker as it opens, so it's always up to date.
-- **From the Call Recording app**, the picker uses a copy of the list that Google Phone's module code saves each time the *Selected numbers* screen opens (and again a few seconds after queued numbers are added). Until that screen has been opened once, the picker says so.
-- Numbers are matched on their **last 9 digits**, so `600 123 456` in your contacts matches `+48600123456` on the list.
+- **From the Call Recording app**, the picker uses a copy of the list that the module saves each time the *Selected numbers* screen opens (and again a few seconds after changes are applied). Until that screen has been opened once, the picker says so. Removals from the app are queued like additions.
+- Numbers are matched on their **last 9 digits**, so `600 123 456` in your contacts matches `+48600123456` on the list. Removals use the number **exactly as Google Phone stored it**.
 
 The Call Recording app now asks for the **Contacts** permission, to show the list. Contacts and the copy of the list stay in the module app's private storage on the phone.
 

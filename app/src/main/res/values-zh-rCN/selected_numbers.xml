@@ -1,17 +1,18 @@
 <resources>
     <string name="sel_section">指定号码</string>
     <string name="sel_open">选择始终录音的号码</string>
-    <string name="sel_open_description">一次选择多个联系人，添加到 Google 电话的“指定号码”列表。下次打开该页面时自动添加。需在 Google 电话中开启“指定号码”开关才会录音。</string>
-    <string name="sel_pending">等待添加：%d 个。请打开电话 → 设置 → 通话录音 → 指定号码。</string>
+    <string name="sel_open_description">一次勾选或取消勾选多个联系人，添加到 Google 电话的“指定号码”列表或从中移除。下次打开该页面时生效。需在 Google 电话中开启“指定号码”开关才会录音。</string>
+    <string name="sel_pending">等待中：添加 %1$d 个，移除 %2$d 个。请打开电话 → 设置 → 通话录音 → 指定号码。</string>
     <string name="sel_multi">电话“添加”按钮支持多选</string>
     <string name="sel_multi_description">Google 电话的“指定号码 → 添加”将打开本模块的多选列表，而不是单个联系人选择器。更改后请重启 Google 电话。</string>
     <string name="picker_title">选择号码</string>
     <string name="picker_search">搜索姓名或号码</string>
-    <string name="picker_add">添加（%d）</string>
+    <string name="picker_save">保存（+%1$d / −%2$d）</string>
+    <string name="picker_on_list">✓ 已在列表中（取消勾选即移除）</string>
+    <string name="picker_will_remove">✗ 将被移除</string>
     <string name="picker_permission">需要通讯录权限才能列出电话号码。</string>
     <string name="picker_empty">未找到电话号码。</string>
-    <string name="picker_queued">已准备 %d 个号码。请在电话中打开 设置 → 通话录音 → 指定号码 以完成添加。</string>
-    <string name="picker_no_dialer">无法打开 Google 电话。请在电话中打开 设置 → 通话录音 → 指定号码 以完成添加。</string>
-    <string name="picker_already">✓ 已在列表中</string>
-    <string name="picker_existing_unknown">打开一次 电话 → 设置 → 通话录音 → 指定号码 后，会标记已在 Google 电话列表中的号码。</string>
+    <string name="picker_queued">已准备：添加 %1$d 个，移除 %2$d 个。请在电话中打开 设置 → 通话录音 → 指定号码 以应用。</string>
+    <string name="picker_no_dialer">无法打开 Google 电话。请在电话中打开 设置 → 通话录音 → 指定号码 以应用更改。</string>
+    <string name="picker_existing_unknown">打开一次 电话 → 设置 → 通话录音 → 指定号码 后，会显示已在 Google 电话列表中的号码。</string>
 </resources>

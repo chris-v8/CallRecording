@@ -95,10 +95,12 @@ public final class SettingsActivity extends Activity {
     }
 
     private void refreshPending() {
-        int count = preferences.getStringSet(SettingsProvider.PENDING,
+        int add = preferences.getStringSet(SettingsProvider.PENDING,
                 java.util.Collections.emptySet()).size();
-        pending.setText(getString(R.string.sel_pending, count));
-        pending.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+        int remove = preferences.getStringSet(SettingsProvider.PENDING_REMOVALS,
+                java.util.Collections.emptySet()).size();
+        pending.setText(getString(R.string.sel_pending, add, remove));
+        pending.setVisibility(add + remove > 0 ? View.VISIBLE : View.GONE);
     }
 
     private void setting(LinearLayout parent, int title, int description,

@@ -28,16 +28,23 @@ final class SettingsBridge {
         return options != null && options.getBoolean("multi_pick", true);
     }
 
-    /** Contact Data URIs picked in the module app; the provider clears them once taken. */
-    static java.util.List<String> takePendingNumbers() {
+    /**
+     * Changes picked in the module app: "pending_numbers" (contact Data URIs to
+     * add) and "pending_removals" (stored numbers to remove). The provider
+     * clears them once taken.
+     */
+    static Bundle takePending() {
         try {
             Application application = currentApplication();
             if (application == null) return null;
-            Bundle reply = application.getContentResolver().call(URI, "take_pending", null, null);
-            return reply == null ? null : reply.getStringArrayList("pending_numbers");
+            return application.getContentResolver().call(URI, "take_pending", null, null);
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    static Application application() {
+        return currentApplication();
     }
 
     /** Copy of Google Phone's Selected numbers list for the module app's picker. */
