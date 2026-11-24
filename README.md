@@ -54,7 +54,8 @@ Status per Google Phone version:
 | "Record all calls" (module setting) | ✅ tested | ✅ tested |
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
 | Multi-select for "Selected numbers": Phone's Add button | ✅ tested | ⏳ waiting for test |
-| Multi-select for "Selected numbers": from the Call Recording app | ⏳ waiting for test | ⏳ waiting for test |
+| Multi-select for "Selected numbers": from the Call Recording app | ✅ tested | ⏳ waiting for test |
+| Multi-select shows numbers already on the list | ⏳ waiting for test | ⏳ waiting for test |
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
 
@@ -395,7 +396,14 @@ Safety rules:
 - The list only answers Google Phone and the Call Recording app. The queue stores contact *links*, not numbers, and is emptied once handed over.
 - Turning on Google Phone's *Selected numbers* switch is still up to you; the module only adds numbers.
 
-The Call Recording app now asks for the **Contacts** permission, to show the list. Contacts never leave the phone.
+**Numbers already on the list** appear checked and greyed out (*✓ Already on the list*) and can't be unticked. Removing stays in Google Phone's own list. Only newly ticked numbers are sent. How the module knows what's on the list:
+
+- Inside Google Phone, `ProtoNumbers.java` **reads** (never writes) Google Phone's settings file `files/CallRecordingSettingsData.pb`. The file is in Google's *protobuf* format; every field carries a small tag saying how long it is, so the reader can walk the whole file without knowing Google's (scrambled) layout, and keeps only values that look like phone numbers (`+` and 6–18 digits). Tested on the real v88 file: 21 of 21 numbers found.
+- **From Google Phone's Add button**, the current list is handed to the picker as it opens, so it's always up to date.
+- **From the Call Recording app**, the picker uses a copy of the list that Google Phone's module code saves each time the *Selected numbers* screen opens (and again a few seconds after queued numbers are added). Until that screen has been opened once, the picker says so.
+- Numbers are matched on their **last 9 digits**, so `600 123 456` in your contacts matches `+48600123456` on the list.
+
+The Call Recording app now asks for the **Contacts** permission, to show the list. Contacts and the copy of the list stay in the module app's private storage on the phone.
 
 ---
 
@@ -411,6 +419,7 @@ xposed/
   AutoRecordingHook.java    "Record all calls" (4.5).
   BubbleHook.java           Android 12 bubble gate (4.4).
   SelectedNumbersHook.java  Multi-select for Google Phone's "Selected numbers" (4.6).
+  ProtoNumbers.java         Reads phone numbers out of Google Phone's settings file (4.6).
   RecordingTimingHook.java  Diagnostics only: logs when a call connects / recording starts.
   SettingsBridge.java       Lets hooks inside Google Phone read the module's settings.
 settings/

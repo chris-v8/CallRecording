@@ -1,12 +1,15 @@
 package io.github.vvb2060.callrecording.xposed;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 
+import java.io.File;
 import java.lang.reflect.Member;
+import java.nio.file.Files;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -42,6 +45,10 @@ final class SelectedNumbersHook {
     private static final String MODULE = "io.github.vvb2060.callrecording";
     private static final String PICKER = MODULE + ".settings.NumberPickerActivity";
     static final String EXTRA_URIS = MODULE + ".extra.URIS";
+    /** Numbers already on the list, so the picker can show them as added. */
+    static final String EXTRA_EXISTING = MODULE + ".extra.EXISTING_NUMBERS";
+    /** Google Phone's DataStore file for call recording settings (88 and 247). */
+    private static final String SETTINGS_FILE = "CallRecordingSettingsData.pb";
     /** The request code Google Phone uses for this picker; its handler ignores any other. */
     private static final int PICK_REQUEST = 9;
 
@@ -109,6 +116,7 @@ final class SelectedNumbersHook {
                 if (view == null) return;
                 // Run after the fragment has finished starting.
                 view.post(() -> {
+                    reportSnapshot(view.getContext());
                     List<String> pending = SettingsBridge.takePendingNumbers();
                     if (pending == null || pending.isEmpty()) return;
                     List<Uri> uris = new ArrayList<>();
@@ -116,6 +124,8 @@ final class SelectedNumbersHook {
                     int added = replay(result, fragment, PICK_REQUEST, Activity.RESULT_OK, uris);
                     XposedBridge.log(TAG + ": applied " + added + "/" + uris.size()
                             + " numbers queued in the module app");
+                    // The adds are saved asynchronously; refresh the module's copy afterwards.
+                    view.postDelayed(() -> reportSnapshot(view.getContext()), 3000);
                 });
             }
         });
@@ -172,10 +182,36 @@ final class SelectedNumbersHook {
                 Activity activity = (Activity) param.thisObject;
                 Intent redirected = new Intent(intent).setClassName(MODULE, PICKER);
                 if (activity.getPackageManager().resolveActivity(redirected, 0) == null) return;
+                ArrayList<String> existing = currentNumbers(activity);
+                if (existing != null) {
+                    redirected.putStringArrayListExtra(EXTRA_EXISTING, existing);
+                    SettingsBridge.reportSelectedNumbers(existing);
+                }
                 param.args[0] = redirected;
             }
         });
         XposedBridge.log(TAG + ": Add button opens the multi-select picker");
+    }
+
+    /**
+     * Numbers on Google Phone's Selected numbers list, read (never written)
+     * from its DataStore file. Null if the file can't be read.
+     */
+    private static ArrayList<String> currentNumbers(Context context) {
+        try {
+            File file = new File(context.getFilesDir(), SETTINGS_FILE);
+            if (!file.isFile()) return new ArrayList<>();
+            return new ArrayList<>(ProtoNumbers.collect(Files.readAllBytes(file.toPath())));
+        } catch (Throwable error) {
+            XposedBridge.log(TAG + ": cannot read the current list: " + error);
+            return null;
+        }
+    }
+
+    /** Lets the module app mark numbers that are already on the list. */
+    private static void reportSnapshot(Context context) {
+        ArrayList<String> numbers = currentNumbers(context);
+        if (numbers != null) SettingsBridge.reportSelectedNumbers(numbers);
     }
 
     private static Method viewCreatedOf(Class<?> fragment) {

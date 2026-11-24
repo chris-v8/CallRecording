@@ -12,4 +12,6 @@
     <string name="picker_empty">未找到电话号码。</string>
     <string name="picker_queued">已准备 %d 个号码。请在电话中打开 设置 → 通话录音 → 指定号码 以完成添加。</string>
     <string name="picker_no_dialer">无法打开 Google 电话。请在电话中打开 设置 → 通话录音 → 指定号码 以完成添加。</string>
+    <string name="picker_already">✓ 已在列表中</string>
+    <string name="picker_existing_unknown">打开一次 电话 → 设置 → 通话录音 → 指定号码 后，会标记已在 Google 电话列表中的号码。</string>
 </resources>

@@ -47,17 +47,25 @@ public final class NumberPickerActivity extends Activity {
     private static final String DIALER = "com.google.android.dialer";
     private static final int REQUEST_CONTACTS = 1;
 
+    /** Must match SelectedNumbersHook.EXTRA_EXISTING. */
+    public static final String EXTRA_EXISTING = "io.github.vvb2060.callrecording.extra.EXISTING_NUMBERS";
+    /** Compare the last 9 digits, so "600 123 456" matches "+48600123456". */
+    private static final int MATCH_DIGITS = 9;
+
     private static final class Entry {
         final long id;
         final String text;
         final String name;
         final String digits;
+        /** Already on Google Phone's Selected numbers list: shown checked, can't be changed. */
+        final boolean already;
 
-        Entry(long id, String text, String name, String digits) {
+        Entry(long id, String text, String name, String digits, boolean already) {
             this.id = id;
             this.text = text;
             this.name = name;
             this.digits = digits;
+            this.already = already;
         }
 
         @Override
@@ -75,6 +83,8 @@ public final class NumberPickerActivity extends Activity {
     private TextView message;
     private Button add;
     private boolean forDialer;
+    /** Digits of the numbers already on the list; null if unknown. */
+    private Set<String> existing;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -88,6 +98,7 @@ public final class NumberPickerActivity extends Activity {
         }
         forDialer = caller != null;
         setTitle(R.string.picker_title);
+        existing = existingNumbers();
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -117,10 +128,29 @@ public final class NumberPickerActivity extends Activity {
 
         list = new ListView(this);
         list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_multiple_choice, shown);
+        adapter = new ArrayAdapter<Entry>(this,
+                android.R.layout.simple_list_item_multiple_choice, shown) {
+            @Override
+            public boolean areAllItemsEnabled() {
+                return false;
+            }
+
+            @Override
+            public boolean isEnabled(int position) {
+                return !shown.get(position).already;
+            }
+
+            @Override
+            public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                View row = super.getView(position, convertView, parent);
+                row.setAlpha(shown.get(position).already ? 0.5f : 1f);
+                return row;
+            }
+        };
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, position, id) -> {
             Entry entry = shown.get(position);
+            if (entry.already) return;
             if (!selected.remove(entry.id)) selected.add(entry.id);
             syncChecks();
             updateButton();
@@ -155,10 +185,12 @@ public final class NumberPickerActivity extends Activity {
 
     private void load() {
         Context context = getApplicationContext();
+        String alreadyLabel = getString(R.string.picker_already);
+        Set<String> known = existing;
         new Thread(() -> {
             List<Entry> entries = new ArrayList<>();
             String[] projection = {Phone._ID, Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER,
-                    Phone.TYPE, Phone.LABEL};
+                    Phone.TYPE, Phone.LABEL, Phone.NORMALIZED_NUMBER};
             try (Cursor cursor = context.getContentResolver().query(Phone.CONTENT_URI,
                     projection, null, null, Phone.DISPLAY_NAME_PRIMARY + " COLLATE LOCALIZED ASC")) {
                 while (cursor != null && cursor.moveToNext()) {
@@ -168,9 +200,12 @@ public final class NumberPickerActivity extends Activity {
                     if (name == null) name = number;
                     CharSequence type = Phone.getTypeLabel(context.getResources(),
                             cursor.getInt(3), cursor.getString(4));
-                    String text = name + "\n" + number + "  ·  " + type;
+                    boolean already = known != null
+                            && (isKnown(known, number) || isKnown(known, cursor.getString(5)));
+                    String text = name + "\n" + number + "  ·  " + type
+                            + (already ? "\n" + alreadyLabel : "");
                     entries.add(new Entry(cursor.getLong(0), text,
-                            name.toLowerCase(Locale.ROOT), digits(number)));
+                            name.toLowerCase(Locale.ROOT), digits(number), already));
                 }
             } catch (RuntimeException error) {
                 runOnUiThread(() -> showMessage(R.string.picker_permission));
@@ -198,6 +233,8 @@ public final class NumberPickerActivity extends Activity {
         syncChecks();
         if (all.isEmpty()) {
             showMessage(R.string.picker_empty);
+        } else if (existing == null) {
+            showMessage(R.string.picker_existing_unknown);
         } else {
             message.setVisibility(View.GONE);
         }
@@ -205,8 +242,45 @@ public final class NumberPickerActivity extends Activity {
 
     private void syncChecks() {
         for (int i = 0; i < shown.size(); i++) {
-            list.setItemChecked(i, selected.contains(shown.get(i).id));
+            Entry entry = shown.get(i);
+            list.setItemChecked(i, entry.already || selected.contains(entry.id));
         }
+    }
+
+    /**
+     * Numbers already on Google Phone's list: passed in by Google Phone's Add
+     * button, or the copy saved the last time its Selected numbers screen opened.
+     */
+    private Set<String> existingNumbers() {
+        List<String> numbers = null;
+        if (forDialer) {
+            numbers = getIntent().getStringArrayListExtra(EXTRA_EXISTING);
+        } else {
+            Set<String> saved = getSharedPreferences(SettingsProvider.PREFS, MODE_PRIVATE)
+                    .getStringSet(SettingsProvider.SNAPSHOT, null);
+            if (saved != null) numbers = new ArrayList<>(saved);
+        }
+        if (numbers == null) return null;
+        Set<String> keys = new HashSet<>();
+        for (String number : numbers) {
+            String key = matchKey(number);
+            if (key != null) keys.add(key);
+        }
+        return keys;
+    }
+
+    private static boolean isKnown(Set<String> known, String number) {
+        String key = matchKey(number);
+        return key != null && known.contains(key);
+    }
+
+    /** Last 9 digits (or all, if shorter), so local and +country forms match. */
+    private static String matchKey(String number) {
+        if (number == null) return null;
+        String digits = digits(number);
+        if (digits.length() < 6) return null;
+        return digits.length() > MATCH_DIGITS
+                ? digits.substring(digits.length() - MATCH_DIGITS) : digits;
     }
 
     private void updateButton() {

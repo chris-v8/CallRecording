@@ -14,9 +14,10 @@ import java.util.Collections;
 
 /**
  * Cross-process settings bridge. Calls are restricted to the module UID and
- * com.google.android.dialer UID. No call numbers or audio are stored; numbers
- * picked for Google Phone's Selected numbers list are queued as contact Data
- * URIs and handed over once.
+ * com.google.android.dialer UID. No call audio or call history is stored.
+ * Numbers picked for Google Phone's Selected numbers list are queued as contact
+ * Data URIs and handed over once; a copy of that list (the numbers Google Phone
+ * already has) is kept in this app's private storage for the picker's checkmarks.
  */
 public final class SettingsProvider extends ContentProvider {
     public static final String PREFS = "module_settings";
@@ -28,6 +29,8 @@ public final class SettingsProvider extends ContentProvider {
     public static final String MULTI_PICK = "multi_pick";
     /** Contact Data URIs (not numbers) waiting for Google Phone's Selected numbers screen. */
     public static final String PENDING = "pending_numbers";
+    /** Copy of Google Phone's Selected numbers, so the picker can mark them as added. */
+    public static final String SNAPSHOT = "selected_snapshot";
 
     @Override
     public boolean onCreate() {
@@ -53,6 +56,12 @@ public final class SettingsProvider extends ContentProvider {
                     prefs.getStringSet(PENDING, Collections.emptySet())));
             prefs.edit().remove(PENDING).apply();
             return reply;
+        }
+        if ("selected_snapshot".equals(method)) {
+            ArrayList<String> numbers = extras == null ? null : extras.getStringArrayList(SNAPSHOT);
+            if (numbers == null) return Bundle.EMPTY;
+            prefs.edit().putStringSet(SNAPSHOT, new java.util.HashSet<>(numbers)).apply();
+            return Bundle.EMPTY;
         }
         if ("report".equals(method)) {
             if (arg == null) return Bundle.EMPTY;

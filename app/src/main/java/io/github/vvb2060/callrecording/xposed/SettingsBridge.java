@@ -40,6 +40,19 @@ final class SettingsBridge {
         }
     }
 
+    /** Copy of Google Phone's Selected numbers list for the module app's picker. */
+    static void reportSelectedNumbers(java.util.ArrayList<String> numbers) {
+        try {
+            Application application = currentApplication();
+            if (application == null) return;
+            Bundle extras = new Bundle();
+            extras.putStringArrayList("selected_snapshot", numbers);
+            application.getContentResolver().call(URI, "selected_snapshot", null, extras);
+        } catch (Throwable ignored) {
+            // The picker then just can't mark existing numbers.
+        }
+    }
+
     static void report(String code) {
         try {
             Application application = currentApplication();

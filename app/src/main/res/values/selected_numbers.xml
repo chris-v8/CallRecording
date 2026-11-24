@@ -12,4 +12,6 @@
     <string name="picker_empty">No phone numbers found.</string>
     <string name="picker_queued">%d number(s) ready. In Phone, open Settings → Call recording → Selected numbers to add them.</string>
     <string name="picker_no_dialer">Couldn\'t open Google Phone. Open Settings → Call recording → Selected numbers in Phone to add them.</string>
+    <string name="picker_already">✓ Already on the list</string>
+    <string name="picker_existing_unknown">Numbers already on Google Phone\'s list are marked after you open Phone → Settings → Call recording → Selected numbers once.</string>
 </resources>
