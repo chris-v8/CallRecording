@@ -50,7 +50,7 @@ Status per Google Phone version:
 | Manual recording | ✅ | ✅ |
 | Auto-record unknown / selected numbers (Google's settings) | ✅ | ✅ |
 | Settings no longer switch themselves off | ✅ tested | ✅ (same protection) |
-| "Record all calls" (module setting) | ⏳ waiting for test | ✅ tested |
+| "Record all calls" (module setting) | ✅ tested | ✅ tested |
 | Return-to-call bubble on Android 12 | ✅ (built in) | ✅ restored by the module |
 
 Other versions (e.g. 100, 120, …) are untested. The module is written to *skip* anything it can't recognise rather than break, so on an unknown version the worst case should be "that feature doesn't work", not a crash. Check the logs (section 7) to see which parts found their targets.
@@ -336,7 +336,7 @@ private static final String[] POLICY_MARKERS = {
 
 When a call starts and *Automatically record all calls* is on, the hook answers "yes, record" for every matched method. When the setting is off, it does nothing and Google's own rules apply.
 
-Status: built, **awaiting the v88 test** (expected log: two `Policy hooked:` lines on v88, one on v247).
+Status: **tested on v88 and v247.** The LSPosed log shows two `Policy hooked:` lines on v88 (`dew.b`, `kup.b`) and one on v247 (`kzj.b`), followed by `first eligibility override` during a call.
 
 > **Heads-up:** this setting is **on by default** in the module's app. With it on, *every* call is recorded, contacts included, regardless of Google's "unknown / selected numbers" settings. Switch it off in the **Call Recording** app if you only want Google's selective recording, then force-stop Google Phone.
 
